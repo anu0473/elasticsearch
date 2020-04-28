@@ -21,9 +21,11 @@ package org.elasticsearch.cluster.remote.test;
 import org.apache.http.HttpHost;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest;
+import org.elasticsearch.action.search.SearchTransportService;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.cluster.node.DiscoveryNode;
 import org.elasticsearch.common.CharArrays;
 import org.elasticsearch.common.io.PathUtils;
 import org.elasticsearch.common.settings.SecureString;
@@ -31,6 +33,8 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.util.concurrent.ThreadContext;
 import org.elasticsearch.core.internal.io.IOUtils;
 import org.elasticsearch.test.rest.ESRestTestCase;
+import org.elasticsearch.test.transport.CapturingTransport;
+import org.elasticsearch.transport.Transport;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -49,6 +53,8 @@ public abstract class AbstractMultiClusterRemoteTestCase extends ESRestTestCase 
     private static final String USER = "x_pack_rest_user";
     private static final String PASS = "x-pack-test-password";
     private static final String KEYSTORE_PASS = "testnode";
+    private static CapturingTransport capturingTransport;
+
 
     @Override
     protected boolean preserveClusterUponCompletion() {
@@ -60,9 +66,24 @@ public abstract class AbstractMultiClusterRemoteTestCase extends ESRestTestCase 
     private static boolean initialized = false;
 
 
+
     @Override
     protected String getTestRestCluster() {
         return "localhost:" + getProperty("test.fixtures.elasticsearch-" + getDistribution() + "-1.tcp.9200");
+    }
+
+
+    public static void closeClientsWithoutConnection() throws IOException {
+        try {
+            capturingTransport = new CapturingTransport();
+            capturingTransport.createConnection(null);
+            Transport.Connection connection = null;
+            connection.close();
+            IOUtils.close(cluster1Client, cluster2Client);
+        } finally {
+            assertNotEquals(cluster1Client,null) ;
+            assertNotEquals(cluster2Client,null) ;
+        }
     }
 
     @Before
@@ -97,6 +118,7 @@ public abstract class AbstractMultiClusterRemoteTestCase extends ESRestTestCase 
             cluster2Client = null;
         }
     }
+
 
     protected static RestHighLevelClient cluster1Client() {
         return cluster1Client;
