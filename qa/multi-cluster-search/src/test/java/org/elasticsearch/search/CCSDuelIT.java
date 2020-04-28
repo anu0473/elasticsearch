@@ -86,6 +86,7 @@ import org.elasticsearch.search.suggest.term.TermSuggestion;
 import org.elasticsearch.search.suggest.term.TermSuggestionBuilder;
 import org.elasticsearch.test.NotEqualMessageBuilder;
 import org.elasticsearch.test.rest.ESRestTestCase;
+import org.elasticsearch.transport.Transport;
 import org.junit.AfterClass;
 import org.junit.Before;
 
@@ -215,7 +216,23 @@ public class CCSDuelIT extends ESRestTestCase {
         assertEquals(0, refreshResponse.getFailedShards());
         assertEquals(numShards, refreshResponse.getSuccessfulShards());
     }
-
+    private void multiClusterConnectionCheck() throws Exception {
+    assumeMultiClusterSetup();
+    int numCLusters = 5;
+        for (int i = 0; i < numCLusters; i++) {
+            if(i==3){
+                try{
+                    Transport.Connection connection = null;
+                    connection.close();
+                }finally {
+                    cleanUpCluster();
+                    assertEquals(getClusterHosts(),null);
+                    break;
+                }
+            }
+            buildIndexRequest(Integer.toString(i) , "answer", Integer.toString(i+ randomIntBetween(0, numCLusters - 1)));
+        }
+    }
     private static IndexRequest buildIndexRequest(String id, String type, String questionId) {
         IndexRequest indexRequest = new IndexRequest(INDEX_NAME);
         indexRequest.id(id);
