@@ -20,22 +20,23 @@
 package org.elasticsearch.rest.action.admin.cluster;
 
 import org.elasticsearch.action.admin.cluster.node.info.NodesInfoRequest;
+import org.elasticsearch.action.admin.cluster.state.ClusterStateRequest;
+import org.elasticsearch.action.admin.cluster.state.ClusterStateResponse;
+import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.client.Client;
+import org.elasticsearch.client.Requests;
+import org.elasticsearch.cluster.ClusterState;
+import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.settings.SettingsFilter;
 import org.elasticsearch.common.util.set.Sets;
-import org.elasticsearch.rest.RestController;
-import org.elasticsearch.rest.RestHandler;
-import org.elasticsearch.rest.RestRequest;
+import org.elasticsearch.common.xcontent.XContentBuilder;
+import org.elasticsearch.rest.*;
+import org.elasticsearch.rest.action.RestBuilderListener;
 import org.elasticsearch.test.ESTestCase;
 import org.elasticsearch.test.rest.FakeRestRequest;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 import static org.elasticsearch.rest.action.admin.cluster.RestNodesInfoAction.ALLOWED_METRICS;
 import static org.hamcrest.Matchers.equalTo;
@@ -56,7 +57,7 @@ public class RestNodesInfoActionTests extends ESTestCase {
         assertArrayEquals(new String[] { "_all", "master:false", "_all" }, actual.nodesIds());
     }
 
-    
+
     public void RestNodesInfoAction(Settings settings, RestController controller, Client client, SettingsFilter settingsFilter) {
         super(settings, controller, client);
         controller.registerHandler(GET, "/_nodes", this);
@@ -176,4 +177,41 @@ public class RestNodesInfoActionTests extends ESTestCase {
     private void assertAllMetricsTrue(NodesInfoRequest nodesInfoRequest) {
         assertThat(nodesInfoRequest.requestedMetrics(), equalTo(ALLOWED_METRICS));
     }
+
+    public void handleRequest(final RestRequest request, final RestChannel channel, final Client client) {
+        final ClusterStateRequest clusterStateRequest = Requests.clusterStateRequest();
+        clusterStateRequest.indicesOptions(IndicesOptions.fromRequest(request, clusterStateRequest.indicesOptions()));
+        clusterStateRequest.local(request.paramAsBoolean("local", clusterStateRequest.local()));
+        clusterStateRequest.masterNodeTimeout(request.paramAsTime("master_timeout", clusterStateRequest.masterNodeTimeout()));
+
+        final String[] indices = Strings.splitStringByCommaToArray(request.param("indices", "_all"));
+        boolean isAllIndicesOnly = indices.length == 1 && "_all".equals(indices[0]);
+        if (!isAllIndicesOnly) {
+            clusterStateRequest.indices(indices);
+        }
+
+        if (request.hasParam("metric")) {
+            EnumSet<ClusterState.Metric> metrics = ClusterState.Metric.parseString(request.param("metric"), true);
+            // do not ask for what we do not need.
+            clusterStateRequest.nodes(metrics.contains(ClusterState.Metric.NODES) || metrics.contains(ClusterState.Metric.MASTER_NODE));
+            //there is no distinction in Java api between routing_table and routing_nodes, it's the same info set over the wire, one single flag to ask for it
+            clusterStateRequest.routingTable(metrics.contains(ClusterState.Metric.ROUTING_TABLE) || metrics.contains(ClusterState.Metric.ROUTING_NODES));
+            //clusterStateRequest.metaData(metrics.contains(ClusterState.Metric.METADATA));
+            clusterStateRequest.blocks(metrics.contains(ClusterState.Metric.BLOCKS));
+            clusterStateRequest.customs(metrics.contains(ClusterState.Metric.CUSTOMS));
+        }
+        settingsFilter.addFilterSettingParams(request);
+
+        client.admin().cluster().state(clusterStateRequest, new RestBuilderListener<ClusterStateResponse>(channel) {
+            @Override
+            public RestResponse buildResponse(ClusterStateResponse response, XContentBuilder builder) throws Exception {
+                builder.startObject();
+                builder.field(RestClusterStateAction.Fields.CLUSTER_NAME, response.getClusterName().value());
+                response.getState().toXContent(builder, request);
+                builder.endObject();
+                return new BytesRestResponse(RestStatus.OK, builder);
+            }
+        });
+    }
+
 }
