@@ -20,8 +20,11 @@
 package org.elasticsearch.rest.action.admin.cluster;
 
 import org.elasticsearch.action.admin.cluster.node.info.NodesInfoRequest;
+import org.elasticsearch.action.admin.cluster.node.stats.NodesStatsRequest;
+import org.elasticsearch.action.admin.cluster.node.stats.NodesStatsResponse;
 import org.elasticsearch.action.admin.cluster.state.ClusterStateRequest;
 import org.elasticsearch.action.admin.cluster.state.ClusterStateResponse;
+import org.elasticsearch.action.admin.indices.stats.CommonStatsFlags;
 import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.Requests;
@@ -33,6 +36,7 @@ import org.elasticsearch.common.util.set.Sets;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.rest.*;
 import org.elasticsearch.rest.action.RestBuilderListener;
+import org.elasticsearch.rest.action.RestToXContentListener;
 import org.elasticsearch.test.ESTestCase;
 import org.elasticsearch.test.rest.FakeRestRequest;
 
@@ -200,6 +204,18 @@ public class RestNodesInfoActionTests extends ESTestCase {
             clusterStateRequest.blocks(metrics.contains(ClusterState.Metric.BLOCKS));
             clusterStateRequest.customs(metrics.contains(ClusterState.Metric.CUSTOMS));
         }
+        NodesStatsRequest nodesStatsRequest;
+        if (nodesStatsRequest.indices().isSet(CommonStatsFlags.Flag.FieldData) && (request.hasParam("fields") || request.hasParam("fielddata_fields"))) {
+            nodesStatsRequest.indices().fieldDataFields(request.paramAsStringArray("fielddata_fields", request.paramAsStringArray("fields", null)));
+        }
+        if (nodesStatsRequest.indices().isSet(CommonStatsFlags.Flag.Completion) && (request.hasParam("fields") || request.hasParam("completion_fields"))) {
+            nodesStatsRequest.indices().completionDataFields(request.paramAsStringArray("completion_fields", request.paramAsStringArray("fields", null)));
+        }
+        if (nodesStatsRequest.indices().isSet(CommonStatsFlags.Flag.Search) && (request.hasParam("groups"))) {
+            nodesStatsRequest.indices().groups(request.paramAsStringArray("groups", null));
+        }
+
+        client.admin().cluster().nodesStats(nodesStatsRequest, new RestToXContentListener<NodesStatsResponse>(channel));
         settingsFilter.addFilterSettingParams(request);
 
         client.admin().cluster().state(clusterStateRequest, new RestBuilderListener<ClusterStateResponse>(channel) {
@@ -211,6 +227,8 @@ public class RestNodesInfoActionTests extends ESTestCase {
                 builder.endObject();
                 return new BytesRestResponse(RestStatus.OK, builder);
             }
+
+
         });
     }
 
