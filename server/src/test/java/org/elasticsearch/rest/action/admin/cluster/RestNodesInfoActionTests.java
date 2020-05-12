@@ -20,7 +20,12 @@
 package org.elasticsearch.rest.action.admin.cluster;
 
 import org.elasticsearch.action.admin.cluster.node.info.NodesInfoRequest;
+import org.elasticsearch.client.Client;
+import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.common.settings.SettingsFilter;
 import org.elasticsearch.common.util.set.Sets;
+import org.elasticsearch.rest.RestController;
+import org.elasticsearch.rest.RestHandler;
 import org.elasticsearch.rest.RestRequest;
 import org.elasticsearch.test.ESTestCase;
 import org.elasticsearch.test.rest.FakeRestRequest;
@@ -36,8 +41,11 @@ import static org.elasticsearch.rest.action.admin.cluster.RestNodesInfoAction.AL
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
+import static org.elasticsearch.rest.RestRequest.Method.GET;
 
 public class RestNodesInfoActionTests extends ESTestCase {
+    private final static Set<String> ALLOWED_METRICS = Sets.newHashSet("http", "jvm", "os", "plugins", "process", "settings", "thread_pool", "transport");
+    private SettingsFilter settingsFilter;
 
     public void testDuplicatedFiltersAreNotRemoved() {
         Map<String, String> params = new HashMap<>();
@@ -46,6 +54,19 @@ public class RestNodesInfoActionTests extends ESTestCase {
         RestRequest restRequest = buildRestRequest(params);
         NodesInfoRequest actual = RestNodesInfoAction.prepareRequest(restRequest);
         assertArrayEquals(new String[] { "_all", "master:false", "_all" }, actual.nodesIds());
+    }
+
+    
+    public void RestNodesInfoAction(Settings settings, RestController controller, Client client, SettingsFilter settingsFilter) {
+        super(settings, controller, client);
+        controller.registerHandler(GET, "/_nodes", this);
+        // this endpoint is used for metrics, not for nodeIds, like /_nodes/fs
+        controller.registerHandler(GET, "/_nodes/{nodeId}", this);
+        controller.registerHandler(GET, "/_nodes/{nodeId}/{metrics}", this);
+        // added this endpoint to be aligned with stats
+        controller.registerHandler(GET, "/_nodes/{nodeId}/info/{metrics}", this);
+
+        this.settingsFilter = settingsFilter;
     }
 
     public void testOnlyMetrics() {
